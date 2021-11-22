@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+layers_dir="$1"
+env_dir="$2/env"
+
+if compgen -G "${env_dir}/*" > /dev/null; then
+  for var in ${env_dir}/*; do
+    declare "$(basename ${var})=$(<${var})"
+  done
+fi
+
+nginx_layer=$layers_dir/nginx
+
+case "${CNB_STACK_ID}" in
+  heroku-16|heroku-18|heroku-20)
+    nginx_archive_url="https://heroku-buildpack-static.s3.amazonaws.com/${CNB_STACK_ID}/nginx-1.19.0-ngx_mruby-2.2.3.tgz"
+    ;;
+  cedar-14)
+    nginx_archive_url='https://heroku-buildpack-ruby.s3.amazonaws.com/nginx/cedar-14/nginx-1.9.7-ngx_mruby.tgz'
+    ;;
+  *)
+    echo "Stack ${CNB_STACK_ID} is not supported!"
+    exit 1
+    ;;
+esac
+
+rm -rf $nginx_layer
+mkdir -p $nginx_layer/bin
+curl -sSf --retry 3 --connect-timeout 3 "${nginx_archive_url}" | tar -xzC "${nginx_layer}/bin"
+cat > "$nginx_layer.toml" <<EOL
+launch = true
+EOL
+
+nginx_version=$("${nginx_layer}/bin/nginx" -v |& cut -d '/' -f 2-)
+cp -a $CNB_BUILDPACK_DIR/scripts/{boot,config} -t $nginx_layer/bin/
+echo "-----> Installed nginx ${nginx_version} to ${nginx_layer}/bin"
+
+mkdir -p $nginx_layer/config
+cp $CNB_BUILDPACK_DIR/scripts/config/templates/mime.types $nginx_layer/config
+
+mkdir -p $nginx_layer/logs
+
+cat > "$layers_dir/launch.toml" <<EOL
+[[processes]]
+type = "web"
+command = "$nginx_layer/bin/boot"
+
+[[bom]]
+name = "nginx"
+[bom.metadata]
+version = "$nginx_version"
+EOL

@@ -1,0 +1,127 @@
+daemon off;
+worker_processes auto;
+
+events {
+  use epoll;
+  accept_mutex on;
+  worker_connections <%= worker_connections %>;
+}
+
+http {
+  gzip on;
+  gzip_comp_level 6;
+  gzip_min_length 512;
+  gzip_types text/plain text/css application/json application/x-javascript text/xml application/xml application/xml+rss text/javascript;
+  gzip_vary on;
+  gzip_proxied any;
+
+  server_tokens off;
+
+<% if logging['access'] %>
+  access_log logs/access.log;
+<% else %>
+  access_log off;
+<% end %>
+
+<% if debug %>
+  error_log stderr debug;
+  rewrite_log on;
+<% else %>
+  error_log stderr <%= logging['error'] %>;
+<% end %>
+
+  include mime.types;
+  default_type application/octet-stream;
+  sendfile on;
+
+  #Must read the body in 5 seconds.
+  client_body_timeout 5;
+
+  server {
+    listen <%= port %> reuseport;
+    charset <%= encoding %>;
+    port_in_redirect off;
+    keepalive_timeout 5;
+    root <%= root %>;
+  <% if error_page %>
+    error_page 404 500 /<%= error_page %>;
+  <% end %>
+  <% if proxies.any? %>
+    resolver <%= resolver %>;
+  <% end %>
+
+  <% if basic_auth %>
+    auth_basic "Restricted";
+    auth_basic_user_file <%= basic_auth_htpasswd_path %>;
+  <% end %>
+
+    mruby_post_read_handler /layers/fagiani_static/nginx/bin/config/lib/ngx_mruby/headers.rb cache;
+
+    location / {
+      mruby_set $fallback /layers/fagiani_static/nginx/bin/config/lib/ngx_mruby/routes_fallback.rb cache;
+    <% if clean_urls %>
+      try_files $uri.html $uri $uri/ $fallback;
+    <% else %>
+      try_files $uri $uri/ $fallback;
+    <% end %>
+    }
+
+  <% if clean_urls %>
+    location ~ \.html$ {
+      try_files $uri =404;
+    }
+  <% end %>
+
+  <% if https_only %>
+    if ($http_x_forwarded_proto != "https") {
+      return 301 https://$host$request_uri;
+    }
+  <% end %>
+
+  <% if canonical_host %>
+    if ($host != <%= canonical_host %>) {
+      return 301 $http_x_forwarded_proto://<%= canonical_host %>$request_uri;
+    }
+  <% end %>
+
+  <% routes.each do |route, path| %>
+    location ~ ^<%= route %>$ {
+      set $route <%= route %>;
+      mruby_set $path /layers/fagiani_static/nginx/bin/config/lib/ngx_mruby/routes_path.rb cache;
+      mruby_set $fallback /layers/fagiani_static/nginx/bin/config/lib/ngx_mruby/routes_fallback.rb cache;
+    <% if clean_urls %>
+      try_files $uri.html $uri $uri/ $path $fallback;
+    <% else %>
+      try_files $uri $path $fallback;
+    <% end %>
+    }
+  <% end %>
+
+  # need this b/c setting $fallback to =404 will try #{root}=404 instead of returning a 404
+  location @404 {
+    return 404;
+  }
+
+  # fallback proxy named match
+  <% proxies.each do |location, hash| %>
+    set $<%= hash['name'] %> <%= hash['host'] %>;
+    location @<%= location %> {
+      rewrite ^<%= location %>/?(.*)$ <%= hash['path'] %>/$1 break;
+      # can reuse variable set above
+      proxy_pass $<%= hash['name'] %>;
+      proxy_ssl_server_name on;
+      <% %w(http https).each do |scheme| %>
+      proxy_redirect <%= hash["redirect_#{scheme}"] %> <%= location %>;
+      <% end %>
+    }
+  <% end %>
+
+  # fallback redirects named match
+  <% redirects.each do |path, hash| %>
+    location @<%= path %> {
+      return <%= hash['status'] || 301 %> <%= hash['url'] %>;
+    }
+  <% end %>
+
+  }
+}

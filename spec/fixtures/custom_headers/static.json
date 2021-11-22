@@ -1,0 +1,11 @@
+{
+  "headers": {
+    "/": {
+      "Cache-Control": "no-cache"
+    },
+    "/foo.html": {
+      "X-Foo": "true"
+    }
+  },
+  "clean_urls": true
+}

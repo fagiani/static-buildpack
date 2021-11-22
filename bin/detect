@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# bin/detect <build-dir>
+
+if [[ -f static.json ]]; then
+  echo "Static Content" && exit 0
+else
+  echo "Could not find 'static.json'! Please ensure it exists and is checked into Git." && exit 1
+fi

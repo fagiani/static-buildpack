@@ -1,0 +1,33 @@
+api = "0.4"
+
+[buildpack]
+id = "fagiani/static"
+version = "0.0.1"
+name = "CNB Static Buildpack"
+homepage = "https://github.com/fagiani/static-buildpack"
+description = "Serves static content with nginx"
+keywords = ["static", "content", "nginx", "html", "css", "js", "assets"]
+
+  [publish.Ignore]
+  files = [
+    ".github/",
+    "spec/",
+    ".gitignore",
+    ".rspec",
+    "Gemfile",
+    "Gemfile.lock",
+    "Makefile",
+    "Rakefile"
+  ]
+
+[[buildpack.licenses]]
+type = "MIT"
+
+[[stacks]]
+id = "heroku-18"
+
+[[stacks]]
+id = "heroku-20"
+
+[[stacks]]
+id = "io.buildpacks.stacks.bionic"
